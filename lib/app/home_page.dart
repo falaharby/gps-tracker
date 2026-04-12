@@ -1,26 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:gps_tracking_system/app/app.dart';
-import 'package:hive_flutter/hive_flutter.dart';
-import 'package:gps_tracking_system/core/services/background_service_init.dart';
-import 'package:gps_tracking_system/features/tracking/model/location_point.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  await initializeService();
-
-  await Hive.initFlutter();
-  if (!Hive.isAdapterRegistered(0)) {
-    Hive.registerAdapter(LocationPointAdapter());
-  }
-
-  runApp(MyApp());
-}
-
-
 class MyApp extends StatelessWidget {
+  const MyApp({Key? key}) : super(key: key);
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -30,6 +14,8 @@ class MyApp extends StatelessWidget {
 }
 
 class HomePage extends StatefulWidget {
+  const HomePage({Key? key}) : super(key: key);
+
   @override
   _HomePageState createState() => _HomePageState();
 }
