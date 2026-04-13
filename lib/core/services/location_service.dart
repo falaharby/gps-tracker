@@ -9,10 +9,6 @@ class LocationService extends ChangeNotifier {
   static const int defaultDistanceFilter = 10; // meters
   static const Duration defaultAccuracy = Duration(seconds: 5);
 
-  bool _isTracking = false;
-
-  bool get isTracking => _isTracking;
-
   /// Get current location permission status
   Future<LocationPermission> checkPermission() async {
     return await Geolocator.checkPermission();

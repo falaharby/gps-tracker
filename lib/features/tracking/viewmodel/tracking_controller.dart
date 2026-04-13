@@ -50,7 +50,6 @@ class TrackingController extends ChangeNotifier {
   StreamSubscription<Position>? _positionStreamSubscription;
   late final MapController mapController;
   late final TextEditingController searchController;
-  StreamSubscription? _backgroundServiceSubscription;
   final List<StreamSubscription> _bgSubscriptions = [];
 
   TrackingController({

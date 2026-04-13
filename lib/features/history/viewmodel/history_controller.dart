@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:gps_tracking_system/features/tracking/model/location_point.dart';
@@ -21,8 +19,7 @@ class HistoryController extends ChangeNotifier {
 
   HistoryController({
     required LocationHistoryService locationHistoryService,
-  }) : _locationHistoryService = locationHistoryService {
-  }
+  }) : _locationHistoryService = locationHistoryService;
 
   bool _isListening = false;
 

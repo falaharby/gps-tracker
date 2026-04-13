@@ -6,9 +6,9 @@ class SearchResultsWidget extends StatelessWidget {
   final Function(double, double, String) onResultSelected;
 
   const SearchResultsWidget({
-    Key? key,
+    super.key,
     required this.onResultSelected,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
