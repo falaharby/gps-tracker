@@ -66,7 +66,6 @@ Future<void> onStart(ServiceInstance service) async {
 
   // Handle startTracking command
   service.on('startTracking').listen((event) async {
-    print('Tracking Start');
     if (trackingTimer != null || positionSubscription != null) {
       return; // Already tracking
     }
@@ -77,7 +76,6 @@ Future<void> onStart(ServiceInstance service) async {
       // Use time-based periodic polling instead of movement-based stream
       final settings = SettingsRepository();
       final interval = await settings.getUpdateInterval();
-      print('Tracking interval: $interval seconds');
       final accuracyKey = await settings.getAccuracy();
 
       LocationAccuracy chosenAccuracy;
@@ -155,6 +153,19 @@ Future<void> onStart(ServiceInstance service) async {
     trackingTimer?.cancel();
     trackingTimer = null;
     service.stopSelf();
+  });
+
+  // Respond to status queries from UI
+  service.on('getStatus').listen((event) async {
+    final isTracking = trackingTimer != null || positionSubscription != null;
+    try {
+      service.invoke('status', {
+        'isTracking': isTracking,
+        'sessionId': currentSessionId,
+      });
+    } catch (e) {
+      // ignore
+    }
   });
 
   // Notify UI that service has finished initialization and is ready

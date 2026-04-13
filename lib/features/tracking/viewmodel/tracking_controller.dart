@@ -51,6 +51,7 @@ class TrackingController extends ChangeNotifier {
   late final MapController mapController;
   late final TextEditingController searchController;
   StreamSubscription? _backgroundServiceSubscription;
+  final List<StreamSubscription> _bgSubscriptions = [];
 
   TrackingController({
     required this.repository,
@@ -60,13 +61,14 @@ class TrackingController extends ChangeNotifier {
     mapController = MapController();
     searchController = TextEditingController();
     _listenToBackgroundService();
+    _syncServiceState();
   }
 
   void _listenToBackgroundService() {
     final service = FlutterBackgroundService();
     
     // Listen to location updates from background service
-    _backgroundServiceSubscription = service.on('locationUpdate').listen(
+    final locSub = service.on('locationUpdate').listen(
       (event) {
         try {
           final latitude = event?['latitude'] as double? ?? 0;
@@ -115,6 +117,43 @@ class TrackingController extends ChangeNotifier {
         }
       },
     );
+    _bgSubscriptions.add(locSub);
+
+    // Listen for tracking started/stopped events so UI state stays in sync
+    final startedSub = service.on('trackingStarted').listen((event) {
+      try {
+        _isTracking = true;
+        _currentSessionId = event?['sessionId'] as String?;
+        notifyListeners();
+      } catch (e) {
+        debugPrint('Error handling trackingStarted: $e');
+      }
+    });
+    _bgSubscriptions.add(startedSub);
+
+    final stoppedSub = service.on('trackingStopped').listen((event) {
+      try {
+        _isTracking = false;
+        _currentSessionId = null;
+        notifyListeners();
+      } catch (e) {
+        debugPrint('Error handling trackingStopped: $e');
+      }
+    });
+    _bgSubscriptions.add(stoppedSub);
+
+    // Listen for status response from service when querying current state
+    final statusSub = service.on('status').listen((event) {
+      try {
+        final isTracking = event?['isTracking'] as bool? ?? false;
+        _isTracking = isTracking;
+        _currentSessionId = event?['sessionId'] as String?;
+        notifyListeners();
+      } catch (e) {
+        debugPrint('Error handling status event: $e');
+      }
+    });
+    _bgSubscriptions.add(statusSub);
   }
 
   Future<void> initializeLocation() async {
@@ -245,11 +284,9 @@ class TrackingController extends ChangeNotifier {
 
   // ========== TRACKING FUNCTIONALITY ==========
   Future<void> startTracking(Function(LatLng) onLocationUpdate) async {
-    print('here 1');
     if (_isTracking) return;
 
     try {
-      print('here 2');
       _isTracking = true;
       _currentSessionId = const Uuid().v4();
       _polylinePoints.clear();
@@ -258,8 +295,6 @@ class TrackingController extends ChangeNotifier {
 
       // Get the background service
       final service = FlutterBackgroundService();
-
-      print('here 3');
 
       // Check if service is still running, if not configure it first
       final isRunning = await service.isRunning();
@@ -274,13 +309,12 @@ class TrackingController extends ChangeNotifier {
         }
       }
 
-      print('here 4');
-
       try {
-        // Send startTracking command to background service
         service.invoke('startTracking', {
           'sessionId': _currentSessionId,
         });
+        _isTracking = true;
+        notifyListeners();
       } catch (e) {
         debugPrint('Error starting tracking in background service: $e');
         _isTracking = false;
@@ -288,9 +322,7 @@ class TrackingController extends ChangeNotifier {
         notifyListeners();
       }
 
-      print('here 5');
     } catch (e) {
-      print('Error starting tracking: $e');
       _isTracking = false;
       _currentSessionId = null;
       notifyListeners();
@@ -327,8 +359,47 @@ class TrackingController extends ChangeNotifier {
   @override
   void dispose() {
     _positionStreamSubscription?.cancel();
-    _backgroundServiceSubscription?.cancel();
+    for (final s in _bgSubscriptions) {
+      try {
+        s.cancel();
+      } catch (_) {}
+    }
     searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _syncServiceState() async {
+    final service = FlutterBackgroundService();
+    try {
+      final isRunning = await service.isRunning();
+
+      // Try to query service for current tracking state. If service isn't
+      // running according to the plugin, attempt to start it briefly so we
+      // can get the status back. All calls are guarded by try/catch to avoid
+      // crashing on devices where the service isolate isn't reachable yet.
+      try {
+        service.invoke('getStatus');
+      } catch (e) {
+        debugPrint('Direct status invoke failed: $e');
+        if (!isRunning) {
+          try {
+            await service.startService();
+            // wait for readiness then request status
+            try {
+              await service.on('serviceReady').first.timeout(const Duration(seconds: 5));
+            } catch (_) {}
+            try {
+              service.invoke('getStatus');
+            } catch (e2) {
+              debugPrint('Status invoke after start failed: $e2');
+            }
+          } catch (startErr) {
+            debugPrint('Failed to start background service for status sync: $startErr');
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error checking background service state: $e');
+    }
   }
 }

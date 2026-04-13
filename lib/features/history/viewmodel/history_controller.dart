@@ -41,7 +41,6 @@ class HistoryController extends ChangeNotifier {
   Future<void> _listenToBackgroundService() async {
     if (_isListening) return;
     _isListening = true;
-    log('Setting up background service listener in HistoryController');
     final service = FlutterBackgroundService();
 
     // Refresh data when there's location update
