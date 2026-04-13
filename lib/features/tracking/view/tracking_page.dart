@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -216,6 +219,13 @@ class TrackingPage extends StatelessWidget {
       BuildContext context, TrackingController controller) async {
     if (!controller.isTracking) {
       // Start tracking
+      final granted = await requestPermissions();
+
+      if (!granted) {
+        _showPermissionDialog(context);
+        return;
+      }
+      
       try {
         await controller.startTracking((newPos) {
           controller.mapController.move(newPos, 15.0);
@@ -255,6 +265,44 @@ class TrackingPage extends StatelessWidget {
         ),
         duration: const Duration(seconds: 2),
       ),
+    );
+  }
+
+  // 🔥 REQUEST PERMISSION BEFORE START
+  Future<bool> requestPermissions() async {
+    final notif = await Permission.notification.request();
+    final location = await Permission.location.request();
+
+    return notif.isGranted && location.isGranted;
+  }
+
+  void _showPermissionDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Permissions Required'),
+          content: const Text(
+            'Location permissions are required for tracking to work properly.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: const Text('Back', style: TextStyle(color: Colors.red)),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                requestPermissions();
+              },
+              child: const Text('Request', style: TextStyle(color: Colors.blue)),
+            ),
+          ],
+        );
+      },
     );
   }
 }

@@ -1,16 +1,18 @@
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:gps_tracking_system/features/tracking/model/location_point.dart';
 import 'package:gps_tracking_system/core/services/location_history_service.dart';
+import 'package:latlong2/latlong.dart';
 
 class HistoryController extends ChangeNotifier {
   final LocationHistoryService _locationHistoryService;
 
-  // State variables
   List<LocationPoint> _locations = [];
   bool _isLoading = false;
   String? _error;
 
-  // Getters
   List<LocationPoint> get locations => _locations;
   bool get isLoading => _isLoading;
   String? get error => _error;
@@ -20,7 +22,49 @@ class HistoryController extends ChangeNotifier {
   HistoryController({
     required LocationHistoryService locationHistoryService,
   }) : _locationHistoryService = locationHistoryService {
-    _loadLocations();
+  }
+
+  bool _isListening = false;
+
+  /// Async initialization. Call this after creating the controller.
+  Future<void> init() async {
+    // Ensure the history service has opened its Hive box first
+    try {
+      await _locationHistoryService.init();
+    } catch (_) {
+    }
+
+    await _loadLocations();
+    await _listenToBackgroundService();
+  }
+
+  Future<void> _listenToBackgroundService() async {
+    if (_isListening) return;
+    _isListening = true;
+    log('Setting up background service listener in HistoryController');
+    final service = FlutterBackgroundService();
+
+    // Refresh data when there's location update
+    service.on('locationUpdate').listen(
+      (event) async {
+        final latitude = event?['latitude'] as double? ?? 0;
+        final longitude = event?['longitude'] as double? ?? 0;
+        final newPos = LatLng(latitude, longitude);
+
+        final locationPoint = LocationPoint(
+          latitude: newPos.latitude,
+          longitude: newPos.longitude,
+          sessionId: event?['sessionId'] as String? ?? 'no_session',
+          timestamp: DateTime.now(),
+          accuracy: event?['accuracy'] is int ? (event?['accuracy'] as int).toDouble() : event?['accuracy'] as double? ?? 0.0,
+        );
+
+        // Delegate saving to LocationHistoryService (it manages the Hive box)
+        await _locationHistoryService.saveLocation(locationPoint);
+
+        refresh();
+      },
+    );
   }
 
   /// Internal load method
@@ -30,12 +74,13 @@ class HistoryController extends ChangeNotifier {
 
     try {
       _locations = _locationHistoryService.getAllLocations();
-      // Reverse to show most recent first
       _locations = _locations.reversed.toList();
       _error = null;
+      notifyListeners();
     } catch (e) {
       _error = 'Failed to load locations: ${e.toString()}';
       _locations = [];
+      notifyListeners();
     } finally {
       _setLoading(false);
     }
@@ -50,11 +95,9 @@ class HistoryController extends ChangeNotifier {
     }
 
     try {
-      // Get the actual index in the original list (reverse mapping)
       final actualIndex = _locations.length - 1 - index;
       await _locationHistoryService.deleteLocation(actualIndex);
       
-      // Remove from local list
       _locations.removeAt(index);
       _error = null;
       notifyListeners();
@@ -73,6 +116,7 @@ class HistoryController extends ChangeNotifier {
       await _locationHistoryService.clearHistory();
       _locations = [];
       _error = null;
+      notifyListeners();
     } catch (e) {
       _error = 'Failed to clear history: ${e.toString()}';
     } finally {
@@ -80,12 +124,10 @@ class HistoryController extends ChangeNotifier {
     }
   }
 
-  /// Refresh the locations list
   Future<void> refresh() async {
     await _loadLocations();
   }
 
-  /// Helper to set loading state
   void _setLoading(bool value) {
     _isLoading = value;
     notifyListeners();

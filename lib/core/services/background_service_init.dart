@@ -5,6 +5,7 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:gps_tracking_system/features/tracking/model/location_point.dart';
+import 'package:geolocator/geolocator.dart';
 
 Future<void> initializeService() async {
   final service = FlutterBackgroundService();
@@ -51,40 +52,96 @@ Future<void> onStart(ServiceInstance service) async {
     Hive.registerAdapter(LocationPointAdapter());
   }
 
-  final box = await Hive.openBox<LocationPoint>('locations');
+  Timer? trackingTimer;
+  StreamSubscription<Position>? positionSubscription;
+  String? currentSessionId;
 
-  // ✅ Proper foreground notification (DO NOT create manually)
   if (service is AndroidServiceInstance) {
     service.setForegroundNotificationInfo(
-      title: "Tracking Active",
-      content: "Service started...",
+      title: "Tracking Service",
+      content: "Ready to track...",
     );
   }
 
-  Timer.periodic(const Duration(seconds: 5), (timer) async {
-    final now = DateTime.now();
+  // Handle startTracking command
+  service.on('startTracking').listen((event) async {
+    if (trackingTimer != null || positionSubscription != null) {
+      return; // Already tracking
+    }
 
-    await box.add(LocationPoint(
-      latitude: 0,
-      longitude: 0,
-      sessionId: 'dummy',
-      timestamp: now,
-    ));
+    currentSessionId = event?['sessionId'] as String?;
+
+    try {
+      // Start listening to position stream
+      positionSubscription = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.best,
+          distanceFilter: 10,
+        ),
+      ).listen(
+        (Position position) async {
+          // Update notification
+          if (service is AndroidServiceInstance) {
+            service.setForegroundNotificationInfo(
+              title: "Tracking Active",
+              content: "Lat: ${position.latitude.toStringAsFixed(6)}, Lon: ${position.longitude.toStringAsFixed(6)}",
+            );
+          }
+
+          // Send location update to UI
+          service.invoke('locationUpdate', {
+            "latitude": position.latitude,
+            "longitude": position.longitude,
+            "timestamp": DateTime.now().toString(),
+            "accuracy": position.accuracy,
+            "sessionId": currentSessionId,
+          });
+        },
+        onError: (error) {
+          service.invoke('trackingError', {
+            "error": error.toString(),
+          });
+          positionSubscription?.cancel();
+          positionSubscription = null;
+        },
+      );
+
+      service.invoke('trackingStarted', {
+        "sessionId": currentSessionId,
+      });
+    } catch (e) {
+      service.invoke('trackingError', {
+        "error": e.toString(),
+      });
+    }
+  });
+
+  // Handle stopTracking command
+  service.on('stopTracking').listen((event) async {
+    await positionSubscription?.cancel();
+    positionSubscription = null;
+    trackingTimer?.cancel();
+    trackingTimer = null;
+    currentSessionId = null;
 
     if (service is AndroidServiceInstance) {
       service.setForegroundNotificationInfo(
-        title: "Tracking Active",
-        content: "Last update: $now",
+        title: "Tracking Service",
+        content: "Stopped",
       );
     }
 
-    service.invoke('update', {
-      "time": now.toString(),
+    service.invoke('trackingStopped', {
+      "time": DateTime.now().toString(),
     });
   });
 
+  // Handle stopService command
   service.on('stopService').listen((event) async {
-    await box.close();
+    await positionSubscription?.cancel();
+    positionSubscription = null;
+    trackingTimer?.cancel();
+    trackingTimer = null;
     service.stopSelf();
   });
 }

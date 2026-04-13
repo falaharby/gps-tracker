@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:gps_tracking_system/features/tracking/model/location_state.dart';
 import 'package:gps_tracking_system/features/tracking/model/search_result_state.dart';
 import 'package:gps_tracking_system/features/tracking/model/search_state.dart';
-import 'package:gps_tracking_system/features/tracking/model/location_point.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:uuid/uuid.dart';
@@ -50,6 +50,7 @@ class TrackingController extends ChangeNotifier {
   StreamSubscription<Position>? _positionStreamSubscription;
   late final MapController mapController;
   late final TextEditingController searchController;
+  StreamSubscription? _backgroundServiceSubscription;
 
   TrackingController({
     required this.repository,
@@ -58,9 +59,64 @@ class TrackingController extends ChangeNotifier {
   }) {
     mapController = MapController();
     searchController = TextEditingController();
+    _listenToBackgroundService();
   }
 
-  // ========== LOCATION INITIALIZATION ==========
+  void _listenToBackgroundService() {
+    final service = FlutterBackgroundService();
+    
+    // Listen to location updates from background service
+    _backgroundServiceSubscription = service.on('locationUpdate').listen(
+      (event) {
+        try {
+          final latitude = event?['latitude'] as double? ?? 0;
+          final longitude = event?['longitude'] as double? ?? 0;
+          final newPos = LatLng(latitude, longitude);
+
+          // Add point to polyline
+          _polylinePoints.add(newPos);
+          _updatePolyline();
+
+          // Remove old position markers
+          _markers.clear();
+
+          mapController.move(newPos, 15.0);
+
+          // Add new position marker
+          _markers.add(
+            Marker(
+              width: 24,
+              height: 24,
+              point: newPos,
+              child: Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: Colors.blueAccent,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.blueAccent.withAlpha(153),
+                      blurRadius: 8,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                  border: Border.all(color: Colors.white, width: 3),
+                ),
+              ),
+            ),
+          );
+
+          // Update center
+          _locationState = _locationState.copyWith(center: newPos);
+          notifyListeners();
+        } catch (e) {
+          debugPrint('Error processing location update: $e');
+        }
+      },
+    );
+  }
+
   Future<void> initializeLocation() async {
     try {
       // Request location permission
@@ -191,89 +247,31 @@ class TrackingController extends ChangeNotifier {
     if (_isTracking) return;
 
     try {
-      // Cancel any existing subscription first
-      await _positionStreamSubscription?.cancel();
-      _positionStreamSubscription = null;
-
       _isTracking = true;
       _currentSessionId = const Uuid().v4();
       _polylinePoints.clear();
       _polyline = null;
       notifyListeners();
 
-      final stream = locationService.startTracking();
-      _positionStreamSubscription = stream.listen(
-        (Position position) {
-          final newPos = LatLng(position.latitude, position.longitude);
-          
-          // Save location to Hive with sessionId
-          final locationPoint = LocationPoint(
-            latitude: position.latitude,
-            longitude: position.longitude,
-            timestamp: DateTime.now(),
-            accuracy: position.accuracy,
-            sessionId: _currentSessionId!,
-          );
-          locationHistoryService.saveLocation(locationPoint);
-          
-          // Add point to polyline
-          _polylinePoints.add(newPos);
-          _updatePolyline();
-          
-          // Remove old position markers
-          _markers.removeWhere((marker) {
-            if (marker.child is Container) {
-              final container = marker.child as Container;
-              return container.decoration is BoxDecoration &&
-                  (container.decoration as BoxDecoration).color == Colors.blueAccent;
-            }
-            return false;
-          });
+      // Get the background service
+      final service = FlutterBackgroundService();
 
-          // Add new position marker
-          _markers.add(
-            Marker(
-              width: 24,
-              height: 24,
-              point: newPos,
-              child: Container(
-                width: 24,
-                height: 24,
-                decoration: BoxDecoration(
-                  color: Colors.blueAccent,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.blueAccent.withAlpha(153),
-                      blurRadius: 8,
-                      spreadRadius: 2,
-                    ),
-                  ],
-                  border: Border.all(color: Colors.white, width: 3),
-                ),
-              ),
-            ),
-          );
+      // Check if service is still running, if not configure it first
+      final isRunning = await service.isRunning();
+      if (!isRunning) {
+        // Service not running, start it
+        await service.startService();
+      }
 
-          // Update center and trigger callback
-          _locationState = _locationState.copyWith(center: newPos);
-          onLocationUpdate(newPos);
-          notifyListeners();
-        },
-        onError: (error) {
-          _isTracking = false;
-          _currentSessionId = null;
-          _positionStreamSubscription = null;
-          locationService.stopTracking();
-          notifyListeners();
-        },
-      );
+      // Send startTracking command to background service
+      service.invoke('startTracking', {
+        'sessionId': _currentSessionId,
+      });
     } catch (e) {
       _isTracking = false;
       _currentSessionId = null;
-      _positionStreamSubscription = null;
-      await locationService.stopTracking();
       notifyListeners();
+      rethrow;
     }
   }
 
@@ -292,15 +290,21 @@ class TrackingController extends ChangeNotifier {
     _currentSessionId = null;
     _polylinePoints.clear();
     _polyline = null;
-    await _positionStreamSubscription?.cancel();
-    _positionStreamSubscription = null;
-    await locationService.stopTracking();
+    
+    try {
+      final service = FlutterBackgroundService();
+      service.invoke('stopTracking');
+    } catch (e) {
+      debugPrint('Error stopping tracking: $e');
+    }
+    
     notifyListeners();
   }
 
   @override
   void dispose() {
     _positionStreamSubscription?.cancel();
+    _backgroundServiceSubscription?.cancel();
     searchController.dispose();
     super.dispose();
   }
