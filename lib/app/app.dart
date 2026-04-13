@@ -3,6 +3,7 @@ import 'package:gps_tracking_system/app/router.dart';
 import 'package:provider/provider.dart';
 import 'package:gps_tracking_system/features/tracking/providers.dart';
 import 'package:gps_tracking_system/features/history/providers.dart';
+import 'package:gps_tracking_system/features/setting/providers.dart';
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -12,6 +13,7 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ...trackingProviders(),
+        ...settingProviders(),
         ...historyProviders(),
       ],
       child: MaterialApp(

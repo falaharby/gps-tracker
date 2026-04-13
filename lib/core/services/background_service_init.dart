@@ -6,6 +6,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:gps_tracking_system/features/tracking/model/location_point.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:gps_tracking_system/features/setting/data/settings_repository.dart';
 
 Future<void> initializeService() async {
   final service = FlutterBackgroundService();
@@ -65,6 +66,7 @@ Future<void> onStart(ServiceInstance service) async {
 
   // Handle startTracking command
   service.on('startTracking').listen((event) async {
+    print('Tracking Start');
     if (trackingTimer != null || positionSubscription != null) {
       return; // Already tracking
     }
@@ -72,14 +74,31 @@ Future<void> onStart(ServiceInstance service) async {
     currentSessionId = event?['sessionId'] as String?;
 
     try {
-      // Start listening to position stream
-      positionSubscription = Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.best,
-          distanceFilter: 10,
-        ),
-      ).listen(
-        (Position position) async {
+      // Use time-based periodic polling instead of movement-based stream
+      final settings = SettingsRepository();
+      final interval = await settings.getUpdateInterval();
+      print('Tracking interval: $interval seconds');
+      final accuracyKey = await settings.getAccuracy();
+
+      LocationAccuracy chosenAccuracy;
+      switch (accuracyKey) {
+        case 'high':
+          chosenAccuracy = LocationAccuracy.best;
+          break;
+        case 'balanced':
+          chosenAccuracy = LocationAccuracy.high;
+          break;
+        case 'low':
+          chosenAccuracy = LocationAccuracy.low;
+          break;
+        default:
+          chosenAccuracy = LocationAccuracy.best;
+      }
+
+      trackingTimer = Timer.periodic(Duration(seconds: interval), (timer) async {
+        try {
+          final position = await Geolocator.getCurrentPosition(locationSettings: LocationSettings(accuracy: chosenAccuracy));
+
           // Update notification
           if (service is AndroidServiceInstance) {
             service.setForegroundNotificationInfo(
@@ -96,19 +115,12 @@ Future<void> onStart(ServiceInstance service) async {
             "accuracy": position.accuracy,
             "sessionId": currentSessionId,
           });
-        },
-        onError: (error) {
-          service.invoke('trackingError', {
-            "error": error.toString(),
-          });
-          positionSubscription?.cancel();
-          positionSubscription = null;
-        },
-      );
-
-      service.invoke('trackingStarted', {
-        "sessionId": currentSessionId,
+        } catch (e) {
+          service.invoke('trackingError', {"error": e.toString()});
+        }
       });
+
+      service.invoke('trackingStarted', {"sessionId": currentSessionId});
     } catch (e) {
       service.invoke('trackingError', {
         "error": e.toString(),
@@ -144,4 +156,11 @@ Future<void> onStart(ServiceInstance service) async {
     trackingTimer = null;
     service.stopSelf();
   });
+
+  // Notify UI that service has finished initialization and is ready
+  try {
+    service.invoke('serviceReady');
+  } catch (e) {
+    // ignore errors when notifying readiness
+  }
 }

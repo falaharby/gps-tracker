@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -294,9 +295,14 @@ class TrackingPage extends StatelessWidget {
               child: const Text('Back', style: TextStyle(color: Colors.red)),
             ),
             TextButton(
-              onPressed: () {
+              onPressed: () async {
                 Navigator.pop(context);
-                requestPermissions();
+                final status = await Permission.location.status;
+                if (status.isPermanentlyDenied) {
+                  await Geolocator.openAppSettings();
+                } else {
+                  requestPermissions();
+                }
               },
               child: const Text('Request', style: TextStyle(color: Colors.blue)),
             ),

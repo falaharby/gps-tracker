@@ -154,6 +154,7 @@ class TrackingController extends ChangeNotifier {
       center: LatLng(-7.7844639, 110.4385711),
       isLoaded: true,
     );
+    notifyListeners();
   }
 
   // ========== SEARCH FUNCTIONALITY ==========
@@ -244,9 +245,11 @@ class TrackingController extends ChangeNotifier {
 
   // ========== TRACKING FUNCTIONALITY ==========
   Future<void> startTracking(Function(LatLng) onLocationUpdate) async {
+    print('here 1');
     if (_isTracking) return;
 
     try {
+      print('here 2');
       _isTracking = true;
       _currentSessionId = const Uuid().v4();
       _polylinePoints.clear();
@@ -256,18 +259,38 @@ class TrackingController extends ChangeNotifier {
       // Get the background service
       final service = FlutterBackgroundService();
 
+      print('here 3');
+
       // Check if service is still running, if not configure it first
       final isRunning = await service.isRunning();
       if (!isRunning) {
         // Service not running, start it
         await service.startService();
+        // Wait for background service to finish initialization so listeners are registered
+        try {
+          await service.on('serviceReady').first.timeout(const Duration(seconds: 5));
+        } catch (e) {
+          debugPrint('Service readiness wait timed out or failed: $e');
+        }
       }
 
-      // Send startTracking command to background service
-      service.invoke('startTracking', {
-        'sessionId': _currentSessionId,
-      });
+      print('here 4');
+
+      try {
+        // Send startTracking command to background service
+        service.invoke('startTracking', {
+          'sessionId': _currentSessionId,
+        });
+      } catch (e) {
+        debugPrint('Error starting tracking in background service: $e');
+        _isTracking = false;
+        _currentSessionId = null;
+        notifyListeners();
+      }
+
+      print('here 5');
     } catch (e) {
+      print('Error starting tracking: $e');
       _isTracking = false;
       _currentSessionId = null;
       notifyListeners();
