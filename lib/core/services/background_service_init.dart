@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -11,7 +12,6 @@ import 'package:gps_tracking_system/features/setting/data/settings_repository.da
 Future<void> initializeService() async {
   final service = FlutterBackgroundService();
 
-  // 🔥 CREATE NOTIFICATION CHANNEL BEFORE SERVICE STARTS
   final FlutterLocalNotificationsPlugin notifications =
       FlutterLocalNotificationsPlugin();
 
@@ -133,17 +133,26 @@ Future<void> onStart(ServiceInstance service) async {
     trackingTimer?.cancel();
     trackingTimer = null;
     currentSessionId = null;
-
-    if (service is AndroidServiceInstance) {
-      service.setForegroundNotificationInfo(
-        title: "Tracking Service",
-        content: "Stopped",
-      );
-    }
-
+    // Notify UI that tracking stopped
     service.invoke('trackingStopped', {
       "time": DateTime.now().toString(),
     });
+    
+
+    // Stop the background service so the foreground notification is removed
+    // and the notification becomes dismissible.
+    try {
+      service.stopSelf();
+    } catch (e) {
+      if (service is AndroidServiceInstance) {
+        try {
+          service.setForegroundNotificationInfo(
+            title: "",
+            content: "",
+          );
+        } catch (_) {}
+      }
+    }
   });
 
   // Handle stopService command
@@ -164,7 +173,7 @@ Future<void> onStart(ServiceInstance service) async {
         'sessionId': currentSessionId,
       });
     } catch (e) {
-      // ignore
+      debugPrint('Error invoking status response: $e');
     }
   });
 
@@ -172,6 +181,6 @@ Future<void> onStart(ServiceInstance service) async {
   try {
     service.invoke('serviceReady');
   } catch (e) {
-    // ignore errors when notifying readiness
+    debugPrint('Error invoking serviceReady: $e');
   }
 }

@@ -37,7 +37,7 @@ class _MainPageState extends State<MainPage> {
         decoration: BoxDecoration(
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.1),
+              color: Colors.black.withAlpha(20),
               blurRadius: 8,
               offset: const Offset(0, -2),
             ),

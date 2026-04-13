@@ -28,32 +28,6 @@ class LocationService extends ChangeNotifier {
     return await Geolocator.isLocationServiceEnabled();
   }
 
-  /// Start GPS tracking with stream of position updates
-  /// Returns a stream of [Position] objects
-  Stream<Position> startTracking({
-    int distanceFilter = defaultDistanceFilter,
-    LocationAccuracy accuracy = LocationAccuracy.best,
-  }) {
-    if (_isTracking) {
-      throw Exception('Tracking already in progress');
-    }
-
-    _isTracking = true;
-
-    return Geolocator.getPositionStream(
-      locationSettings: LocationSettings(
-        accuracy: accuracy,
-        distanceFilter: distanceFilter,
-      ),
-    );
-  }
-
-  /// Stop GPS tracking
-  Future<void> stopTracking() async {
-    if (!_isTracking) return;
-    _isTracking = false;
-  }
-
   /// Get current position once
   Future<Position> getCurrentPosition({
     LocationAccuracy accuracy = LocationAccuracy.best,
@@ -77,8 +51,7 @@ class LocationService extends ChangeNotifier {
     }
 
     return await Geolocator.getCurrentPosition(
-      desiredAccuracy: accuracy,
-      timeLimit: timeout,
+      locationSettings: LocationSettings(accuracy: accuracy, timeLimit: timeout),
     );
   }
 
@@ -105,14 +78,5 @@ class LocationService extends ChangeNotifier {
   /// Get accuracy location
   Future<LocationAccuracyStatus> getLocationAccuracy() async {
     return await Geolocator.getLocationAccuracy();
-  }
-
-  /// Dispose resources
-  @override
-  void dispose() {
-    if (_isTracking) {
-      stopTracking();
-    }
-    super.dispose();
   }
 }

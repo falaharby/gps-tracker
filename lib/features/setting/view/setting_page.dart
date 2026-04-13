@@ -73,12 +73,6 @@ class SettingPage extends StatelessWidget {
                           },
                         ),
                       ),
-                      SwitchListTile(
-                        secondary: const Icon(Icons.run_circle),
-                        title: const Text('Background Tracking'),
-                        value: settings.backgroundTracking,
-                        onChanged: (v) => settings.setBackgroundTracking(v),
-                      ),
                     ],
                   ),
                 ),
