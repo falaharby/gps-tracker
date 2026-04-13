@@ -197,21 +197,58 @@ Cons:
 
 ---
 
-## 📌 Future Improvements
-
-* Smart filtering (ignore stationary points)
-* Session-based tracking grouping
-* Route smoothing algorithm
-* Export tracking data (GPX / JSON)
-
----
-
 ## 🧪 Key Engineering Decisions
 
 * Chose time-based tracking for background reliability
 * Used configurable interval for flexibility
 * Avoided overengineering architecture
 * Focused on real-world tracking behavior
+
+---
+## ⚠️ Potential Failures & Limitations
+
+### 1. GPS Accuracy Issues
+
+* Location accuracy may degrade in indoor environments or areas with weak signal
+* This can result in incorrect or “jumping” coordinates
+
+---
+
+### 2. Background Execution Constraints
+
+* On Android, background tracking depends on foreground service and system policies
+* On iOS, background execution is limited and may pause tracking unexpectedly
+
+---
+
+### 3. Battery Consumption
+
+* Frequent location updates (short interval + high accuracy) can significantly drain battery
+
+---
+
+### 4. Redundant Data (Time-based Tracking)
+
+* Since tracking is interval-based, duplicate or stationary points may be recorded when the user is not moving
+
+---
+
+### 5. Permission Denial
+
+* If the user denies location permission, tracking will not function properly
+* “Denied forever” requires manual enabling from system settings
+
+---
+
+### 6. OS Killing Background Service
+
+* Some devices (especially with aggressive battery optimization) may terminate background services
+
+---
+
+### 7. Data Growth Over Time
+
+* Continuous tracking can increase local storage size if not managed or cleared periodically
 
 ---
 
